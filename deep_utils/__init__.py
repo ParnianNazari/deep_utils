@@ -4,7 +4,7 @@ from deep_utils.dummy_objects.dummy_framework import LazyModule
 from .utils.lib_utils.integeration_utils import import_lazy_module
 
 # Deep Utils version number
-__version__ = "1.3.39"
+__version__ = "1.4.10"
 
 from .utils.constants import DUMMY_PATH, Backends
 
@@ -31,10 +31,17 @@ _import_structure = {
     "utils.py_utils.py_utils": ["PyUtils"],
     "utils.json_utils.json_utils": ["JsonUtils"],
     "utils.pickle_utils.pickle_utils": ["PickleUtils"],
+    "utils.coco_utils.main": ["COCOUtils"],
     "utils.fa_nlp_utils.fa_nlp_utils": ['FaNLPUtils'],
     "utils.str_utils.str_utils": ["StringUtils"],
     "medical.nnunet_utils.nnunet_utils": ["NNUnetUtils"],
     "utils.encodes.b64": ["BinaryUtils"],
+    "nlp.utils.persian.utils": ["PersianUtils"],
+    "utils.dataclass_parser.dataclass_argparser": ["DataClassArgParser"],
+    "utils.prompt_utils.prompt_utils": ["PromptUtils"],
+    "utils.ff_utils.ffprobe_utils": ["FFProbeUtils"],
+    "utils.datetime_utils.datetime_utils": ["DateTimeUtils"],
+
     DUMMY_PATH: [],  # this is required for dummy check!
 }
 
@@ -78,6 +85,12 @@ import_lazy_module("LLMUtils", "llm.utils")
 import_lazy_module("NumpyUtils", "utils.numpy_utils.numpy_utils")
 import_lazy_module("AIOHttpRequests", "utils.requests_utils.requests_utils")
 import_lazy_module("RequestsUtils", "utils.requests_utils.requests_utils")
+import_lazy_module("TikTokenUtils", "utils.tiktoken_utils.tiktoken_utils")
+import_lazy_module("MemoryUtilsTorch", "utils.memory_utils.torch_memory_utils")
+import_lazy_module("MinIOUtils", "utils.minio_lib.main")
+import_lazy_module("AsyncDownloadUtils", "utils.download_utils.async_download_utils")
+import_lazy_module("DecordUtils", "utils.decord_utils.decord_utils")
+import_lazy_module("Boto3Utils", "utils.boto3_utils.boto3_utils")
 
 
 if TYPE_CHECKING:
@@ -135,6 +148,17 @@ if TYPE_CHECKING:
     from .llm.utils import LLMUtils
     from .utils.requests_utils.requests_utils import AIOHttpRequests
     from .utils.requests_utils.requests_utils import RequestsUtils
+    from .utils.tiktoken_utils.tiktoken_utils import TikTokenUtils
+    from .utils.memory_utils.torch_memory_utils import MemoryUtilsTorch
+    from .utils.minio_lib.main import MinIOUtils
+    from .utils.download_utils.async_download_utils import AsyncDownloadUtils
+    from .utils.decord_utils.decord_utils import DecordUtils
+    from .utils.dataclass_parser.dataclass_argparser import DataClassArgParser
+    from .utils.coco_utils.main import COCOUtils
+    from .utils.prompt_utils.prompt_utils import PromptUtils
+    from .utils.boto3_utils.boto3_utils import Boto3Utils
+    from .utils.ff_utils.ffprobe_utils import FFProbeUtils
+    from .utils.datetime_utils.datetime_utils import DateTimeUtils
 else:
     import sys
 

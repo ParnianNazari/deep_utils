@@ -4,9 +4,29 @@ from typing import Union, Optional, Sequence, Tuple, List
 import numpy as np
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage
+from deep_utils.medical.main_utils import MainMedUtils
 
 
-class NIBUtils:
+class NIBUtils(MainMedUtils):
+
+    @staticmethod
+    def get_largets_box(array: np.ndarray, get_info: bool = False):
+        if get_info:
+            info = MainMedUtils.get_largets_box(array, get_info)
+            info['class'] = "nib"
+            return info
+        else:
+            return MainMedUtils.get_largets_box(array, get_info)
+
+    @staticmethod
+    def get_largest_box_and_crop(array: np.ndarray, expand: int = 0, get_info: bool = False):
+        if get_info:
+            arr, info = MainMedUtils.get_largest_box_and_crop(array, expand, get_info)
+            info['class'] = "nib"
+            info['expand'] = expand
+            return arr, info
+        else:
+            return MainMedUtils.get_largest_box_and_crop(array, expand, get_info)
     @staticmethod
     def get_img(filepath: str) -> FileBasedImage:
         img = nib.load(filepath)
@@ -25,12 +45,17 @@ class NIBUtils:
         return array, img
 
     @staticmethod
-    def save_sample(filepath: str, sample_array: np.ndarray, *, affine=None, header=None, nib_img: nib.Nifti1Image = None):
-        if nib_img:
-            affine = nib_img.affine
-            header = nib_img.header
-        clipped_img = nib.Nifti1Image(sample_array, affine, header)
+    def save_sample(filepath: str, input_array: np.ndarray, *, affine=None, header=None, img: nib.Nifti1Image = None):
+        if img:
+            affine = img.affine
+            header = img.header
+        clipped_img = nib.Nifti1Image(input_array, affine, header)
         nib.save(clipped_img, filepath)
+    @staticmethod
+    def update_origin_of_cropped_image(origin, spacing, min_coordinates):
+        z, x, y = min_coordinates
+        min_coordinates = [x, y, z]
+
 
     @staticmethod
     def save(img, filepath: str):

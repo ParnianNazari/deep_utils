@@ -153,3 +153,27 @@ class LLMUtils(metaclass=DummyObject):
 
 class NumpyUtils(metaclass=DummyObject):
     _backend = [Backends.NUMPY]
+
+
+class TikTokenUtils(metaclass=DummyObject):
+    _backend = [Backends.TikToken]
+
+
+class MemoryUtilsTorch(metaclass=DummyObject):
+    _backend = [Backends.TORCH]
+
+
+class MinIOUtils(metaclass=DummyObject):
+    _backend = [Backends.MINIO]
+
+
+class AsyncDownloadUtils(metaclass=DummyObject):
+    _backend = [Backends.AIOHTTP]
+
+
+class DecordUtils(metaclass=DummyObject):
+    _backend = [Backends.DECORD]
+
+
+class Boto3Utils(metaclass=DummyObject):
+    _backend = [Backends.BOTO3]

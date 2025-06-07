@@ -1,6 +1,6 @@
 import os
 import shutil
-from os.path import join
+from os.path import join, split, exists
 from pathlib import Path
 from typing import Dict, List, Tuple, Union, Optional
 
@@ -247,7 +247,6 @@ def remove_create(dir_: str, remove=True, logger=None, verbose=1):
     :param verbose:
     :return:
     """
-    import os
     import shutil
 
     if os.path.exists(dir_) and remove:
@@ -259,44 +258,7 @@ def remove_create(dir_: str, remove=True, logger=None, verbose=1):
     raise ValueError("dir_ should be provided!")
 
 
-def mkdir_incremental(dir_path: str, base_name="exp", fix_name=None, overwrite=False) -> Path:
-    """
-    makes new directories, if it exists increment it and makes another one. Good for hyperparameter tuning!
-    Args:
-        dir_path:
-        base_name:
-        fix_name: If provided this will be created!
-        overwrite: If True, it will overwrite the existing directory!
-
-    Returns:
-
-    """
-    os.makedirs(dir_path, exist_ok=True)
-    if overwrite:
-        return Path(dir_path)
-
-    if fix_name is not None:
-        final_path = os.path.join(dir_path, fix_name)
-        os.makedirs(final_path, exist_ok=True)
-    else:
-        folders = []
-        for dir_ in os.listdir(dir_path):
-            if base_name in dir_:
-                counter = dir_.split(base_name + "_")[-1]
-                if counter.isdigit():
-                    folders.append(int(counter))
-        if len(folders) == 0:
-            final_path = os.path.join(dir_path, base_name + f"_1")
-        else:
-            max_counter = max(folders)
-            final_path = os.path.join(
-                dir_path, base_name + f"_{max_counter + 1}")
-        os.makedirs(final_path)
-
-    return Path(final_path)
-
-
-def file_incremental(file_path, artifact_type="prefix", artifact_value=0, extra_punctuation="_",
+def file_incremental(file_path: str, artifact_type="prefix", artifact_value=0, extra_punctuation="_",
                      add_artifact_value=False):
     """
     This function is used to increment a file's address with prefix or suffix values until it becomes unique
@@ -307,18 +269,22 @@ def file_incremental(file_path, artifact_type="prefix", artifact_value=0, extra_
     :param add_artifact_value: If set to True, adds the artifact_value then checks its existence.
     :return:
     """
-    dir_, n = os.path.split(file_path)
+    dir_, filename = os.path.split(file_path)
     artifact_value = int(artifact_value)
     while True:
         if add_artifact_value:
             # Maybe someone requires their file to have the first artifact
-            file_path = join(dir_, split_extension(n, artifact_type=artifact_type, artifact_value=artifact_value,
+            file_path = join(dir_, split_extension(filename,
+                                                   artifact_type=artifact_type,
+                                                   artifact_value=artifact_value,
                                                    extra_punctuation=extra_punctuation))
         if not os.path.exists(file_path):
             break
 
         if not add_artifact_value:
-            file_path = join(dir_, split_extension(n, artifact_type=artifact_type, artifact_value=artifact_value,
+            file_path = join(dir_, split_extension(filename,
+                                                   artifact_type=artifact_type,
+                                                   artifact_value=artifact_value,
                                                    extra_punctuation=extra_punctuation))
         artifact_value += 1
     return file_path
@@ -545,6 +511,16 @@ class DirUtils:
         if mode == "mv" and remove_in_dir:
             shutil.rmtree(in_dir)
 
+    @staticmethod
+    def write_txt(path: str | Path, list_content: list, mode="w"):
+        with open(path, mode=mode) as f:
+            for item in list_content:
+                f.write(f"{item}\n")
+
+    @staticmethod
+    def read_txt(path: str | Path, mode="r"):
+        list_content = [item.strip() for item in open(path, mode=mode).readlines()]
+        return list_content
 
     @staticmethod
     def dir_train_test_split(
@@ -660,13 +636,18 @@ class DirUtils:
                                current_extension=current_extension, )
 
     @staticmethod
-    def list_dir_full_path(directory: str, filter_directories: bool = True,
+    def list_dir_full_path(directory: str,
+                           filter_directories: bool = True,
                            interest_extensions: Optional[Union[str, List[str]]] = None,
                            only_directories: bool = False,
                            get_full_path: bool = True,
                            sort: bool = True,
                            not_exists_is_ok: bool = False,
-                           ) -> List[str]:
+                           dir_depth: int = -1,
+                           exact_depth: bool = False,
+                           return_dict: bool = False,
+                           ends_with: Optional[Union[str, List[str]]] = None,
+                           ) -> Union[List[str], Dict[str, str]]:
         """
         Returns the full path objects in a directory
         :param directory:
@@ -678,31 +659,76 @@ class DirUtils:
         :param sort: If set to True, the directory will be sorted first!
         :param not_exists_is_ok: If set the True, and directory does not exist just returns an empty list,
          otherwise raises error.
+        :param dir_depth: How depth the code should search, default is -1 which means deactivated.
+        Only works when only_directories is set to True.
+        :param exact_depth: If set True, the exact depth should be matched and smaller ones are not accepted!
+        :param return_dict: If return_dict is set to True, the output will be a dict like the following: {filename: filepath}
+        :param ends_with: If ends with these items they will be accepted
         :return:
         """
         interest_extensions = interest_extensions or []
         interest_extensions = [interest_extensions] if isinstance(interest_extensions, str) else interest_extensions
         interest_extensions = [f".{ext}" if not ext.startswith(".") else ext for ext in
                                interest_extensions]
+
         output = []
         if not os.path.exists(directory):
             if not_exists_is_ok:
                 return output
             else:
                 raise ValueError(f"Directory: {directory} does not exist!")
-        for filename in sorted(os.listdir(directory)) if sort else os.listdir(directory):
-            file_path = join(directory, filename)
-            if not only_directories:
-                if filter_directories and os.path.isdir(file_path):
+        if only_directories and dir_depth > 0:
+            directory = "./" if directory == "." else directory
+            for root, dirs, files in os.walk(directory):
+                for dir_name in dirs:
+                    if not DirUtils.endswith(dir_name, ends_with):
+                        continue
+                    current_dir_path = join(directory, root.replace(directory, '').lstrip("//"), dir_name.lstrip("//"))
+                    relative_current_dir_path = join(root.replace(directory, ''), dir_name.lstrip("//"))
+                    current_depth = len(relative_current_dir_path.strip("/").split("/"))
+                    if exact_depth:
+                        if current_depth == dir_depth:
+                            output.append(current_dir_path)
+                    else:
+                        if current_depth <= dir_depth:
+                            output.append(current_dir_path)
+            output = sorted(output) if sort else output
+        else:
+            for filename in sorted(os.listdir(directory)) if sort else os.listdir(directory):
+                if not DirUtils.endswith(filename, ends_with):
                     continue
-                if interest_extensions and DirUtils.split_extension(file_path)[1] not in interest_extensions:
-                    continue
-            else:
-                if not os.path.isdir(file_path):
-                    continue
+                file_path = join(directory, filename)
+                if not only_directories:
+                    if filter_directories and os.path.isdir(file_path):
+                        continue
+                    if interest_extensions and DirUtils.split_extension(file_path)[1] not in interest_extensions:
+                        continue
+                else:
+                    if not os.path.isdir(file_path):
+                        continue
 
-            output.append(file_path if get_full_path else filename)
+                output.append(file_path if get_full_path else filename)
+            output = sorted(output) if sort else output
+            if return_dict:
+                if interest_extensions:
+                    output = {DirUtils.remove_extension_with_replace(split(filepath)[-1], interest_extensions): filepath
+                              for filepath in output}
+                else:
+                    output = {DirUtils.split_extension(split(filepath)[-1])[0]: filepath for filepath in output}
         return output
+
+    @staticmethod
+    def remove_extension_with_replace(filename: str, extensions: list[str]) -> str:
+        """
+        Removes extensions from the input filename
+        :param filename:
+        :param extensions:
+        :return:
+        """
+        for extension in extensions:
+            rev_ext = extension[::-1]
+            filename = filename[::-1].replace(rev_ext, "", 1)[::-1]
+        return filename
 
     @staticmethod
     def remove_create(dir_: str, remove=True, logger=None, verbose=0) -> str:
@@ -730,7 +756,7 @@ class DirUtils:
     @staticmethod
     def crawl_directory_dataset(
             dir_: str,
-            ext_filter: list = None,
+            ext_filter: list | str = None,
             map_labels=False,
             label_map_dict: dict = None,
             logger=None,
@@ -750,6 +776,7 @@ class DirUtils:
         print(f"[INFO] beginning to crawl {dir_}")
         x, y = [], []
         label_map = dict()
+        ext_filter = [ext_filter] if isinstance(ext_filter, str) else ext_filter
         for cls_name in os.listdir(dir_):
             cls_path = join(dir_, cls_name)
             if not os.path.isdir(cls_path):
@@ -842,3 +869,370 @@ class DirUtils:
             skip_transfer=skip_transfer,
             remove_in_dir=remove_in_dir,
         )
+
+    @staticmethod
+    def endswith(filepath: str, ext: list[str] | str):
+        """
+        Checks whether a file ends with a list of strings! If ext is None it will return True!
+        :param filepath:
+        :param ext:
+        :return:
+        """
+        if isinstance(ext, list):
+            for ext_ in ext:
+                if filepath.endswith(ext_):
+                    return True
+            return False
+        elif isinstance(ext, str):
+            return filepath.endswith(ext)
+        elif ext is None:
+            return True
+        else:
+            raise ValueError(f"ext: {ext} is not supported!")
+
+    @staticmethod
+    def file_incremental(file_path: str | None, artifact_type="prefix", artifact_value=0, extra_punctuation="_",
+                         add_artifact_value=False, dir_items: list[str] | None = None):
+        """
+        This function is used to increment a file's address with prefix or suffix values until it becomes unique
+        :param file_path:
+        :param artifact_type:
+        :param artifact_value:
+        :param extra_punctuation:
+        :param add_artifact_value: If set to True, adds the artifact_value then checks its existence.
+        :param dir_items: list of items
+        :return:
+        """
+        dir_, filename = os.path.split(file_path)
+        artifact_value = int(artifact_value)
+        while True:
+            if add_artifact_value:
+                # Maybe someone requires their file to have the first artifact
+
+                file_path = split_extension(filename,
+                                            artifact_type=artifact_type,
+                                            artifact_value=artifact_value,
+                                            extra_punctuation=extra_punctuation)
+                if not dir_items:
+                    file_path = join(dir_, file_path)
+            if (dir_items and not (file_path in dir_items)) or (not dir_items and not os.path.exists(file_path)):
+                break
+
+            if not add_artifact_value:
+                file_path = split_extension(filename,
+                                            artifact_type=artifact_type,
+                                            artifact_value=artifact_value,
+                                            extra_punctuation=extra_punctuation)
+                if not dir_items:
+                    file_path = join(dir_, file_path)
+            artifact_value += 1
+        return file_path
+
+    @staticmethod
+    def mkdir_incremental(dir_path: str | list[str], base_name="exp", fix_name=None, overwrite=False) -> Path:
+        """
+        makes new directories, if it exists increment it and makes another one. Good for hyperparameter tuning!
+        Args:
+            dir_path:
+            base_name:
+            fix_name: If provided this will be created!
+            overwrite: If True, it will overwrite the existing directory!
+
+        Returns:
+
+        """
+        os.makedirs(dir_path, exist_ok=True)
+        if overwrite:
+            return Path(dir_path)
+
+        if fix_name is not None:
+            final_path = os.path.join(dir_path, fix_name)
+            os.makedirs(final_path, exist_ok=True)
+        else:
+            folders = []
+            for dir_ in (os.listdir(dir_path) if isinstance(dir_path, str) else dir_path):
+                if base_name in dir_:
+                    counter = dir_.split(base_name + "_")[-1]
+                    if counter.isdigit():
+                        folders.append(int(counter))
+            if len(folders) == 0:
+                final_path = os.path.join(dir_path, base_name + f"_1")
+            else:
+                max_counter = max(folders)
+                final_path = os.path.join(
+                    dir_path, base_name + f"_{max_counter + 1}")
+            os.makedirs(final_path)
+
+        return Path(final_path)
+
+    @staticmethod
+    def execute_command(command: str):
+        from subprocess import Popen, PIPE
+        process = Popen(command, stdout=PIPE, stderr=None, shell=True)
+        output = process.communicate()[0]
+        return output.decode()
+
+    @staticmethod
+    def is_windows():
+        if os.name != "posix":
+            return True
+        else:
+            return False
+
+    def split(path: str, depth: int = 1, continuous: bool = False, list_it: bool = False,
+              join_del: str = None, return_right: bool = True):
+        """
+
+        :param path:
+        :param depth:
+        :param continuous:
+        :param list_it:
+        :param join_del:
+        :param return_right:
+        :return:
+        >>> DirUtils.split("/pooya/ali/saeed/wow.txt", 3)
+        'ali'
+        >>> DirUtils.split("/pooya/ali/saeed/wow.txt", 2)
+        'saeed'
+        >>> DirUtils.split("/pooya/ali/saeed/wow.txt", 1)
+        'wow.txt'
+        >>> DirUtils.split("/pooya/ali/saeed/wow.txt", 2, continuous=True)
+        'saeed/wow.txt'
+        >>> DirUtils.split("/pooya/ali/saeed", 2, continuous=True)
+        'ali/saeed'
+        >>> DirUtils.split("/pooya/ali/saeed", 2, continuous=True, list_it=True)
+        ['ali', 'saeed']
+        >>> DirUtils.split("/pooya/ali/saeed", 2, continuous=True, join_del=",")
+        'ali,saeed'
+        >>> DirUtils.split("/pooya/ali/saeed", 0)
+        ['pooya', 'ali', 'saeed']
+        >>> DirUtils.split("/pooya/ali/saeed", depth=1, return_right=False)
+        '/pooya/ali'
+        """
+        if depth == 0:
+            outputs = []
+            while path:
+                path, p = split(path)
+                if not p:
+                    break
+                outputs.insert(0, p)
+            return outputs
+        elif depth == 1:
+            if return_right:
+                import warnings
+                warnings.warn("Use os.path.split(path)[-1] for depth=1 :)")
+
+                return split(path)[-1]
+            else:
+                import warnings
+                warnings.warn("Use os.path.split(path)[0] for depth=1 and return_right=False :)")
+                return split(path)[0]
+        elif depth < 1:
+            raise ValueError("depth should not be lower than 1")
+        else:
+            if not continuous:
+                p = path
+                for _ in range(depth - 1):
+                    p = split(p)[0]
+                if return_right:
+                    output = split(p)[-1]
+                else:
+                    output = split(p)[0]
+            else:
+                outputs = []
+                for _ in range(depth):
+                    path, p = split(path)
+                    outputs.insert(0, p)
+                if list_it:
+                    output = outputs
+                else:
+                    if join_del is None:
+                        output = os.path.join(*outputs)
+                    else:
+                        output = join_del.join(item for item in outputs)
+            return output
+
+    @staticmethod
+    def get_file_time(filepath: str):
+        item = DirUtils.execute_command(f"ls -l '{filepath}'")
+        return " ".join(item.split(" ")[-4: -1])
+
+    @staticmethod
+    def get_dir_time(directory: str):
+        return {item.split(" ")[-1]: " ".join(item.split(" ")[-4: -1]) for item in
+                DirUtils.execute_command(f"ls -l '{directory}'").split("\n") if item}
+
+    @staticmethod
+    def open_dir(directory: str):
+        os.system(f"nautilus '{directory}'")
+
+    @staticmethod
+    def get_symbolink(directory: str) -> Dict[str, str]:
+        output = [item.split("->") for item in DirUtils.execute_command(f"ls -l {directory}").split("\n")[1:]]
+        output = {" ".join(item[0].strip().split(" ")[9:]).strip(): item[1].strip() for item in output if
+                  len(item) == 2}
+        return output
+
+    @staticmethod
+    def open_image(path):
+        import sys
+        import subprocess
+        imageViewerFromCommandLine = {'linux': 'xdg-open',
+                                      'win32': 'explorer',
+                                      'darwin': 'open'}[sys.platform]
+        subprocess.run([imageViewerFromCommandLine, path])
+
+    @staticmethod
+    def remove_empty_dirs(directory: str, verbose: bool = True):
+        from tqdm import tqdm
+        if os.path.exists(directory):
+            all_dirs = os.walk(directory)
+            pbar = tqdm(all_dirs, total=len(all_dirs))
+            for root, dirs, filenames in pbar:
+                for dir_ in dirs:
+                    try:
+                        os.remove(dir_)
+                    except:
+                        if verbose:
+                            print(f"[Warning] {dir_} is not empty")
+                pbar.update()
+
+    @staticmethod
+    def is_empty(directory: str):
+        if exists(directory):
+            for root, dirs, filenames in os.walk(directory):
+                for _ in dirs:
+                    return False
+                for _ in filenames:
+                    return False
+        return True
+
+    @staticmethod
+    def safe_item_move(base_directory: str, target_directory: str, remove_if_sizes_are_the_same: bool = True,
+                       keep_the_largest_if_sizes_are_not_the_same: bool = True,
+                       remove_base_empty_dir: bool = True, verbose: bool = True,
+                       copy: bool = False, endswith: str | tuple[str] = None,
+                       not_endswith: str | tuple[str] = None,
+                       min_size: int = None):
+        """
+        This only works for items not directories
+        :param base_directory:
+        :param target_directory:
+        :param remove_base_empty_dir:
+        :param verbose:
+        :param remove_if_sizes_are_the_same:
+        :param min_size: this is based on megabyte
+        :return:
+        """
+        from tqdm import tqdm
+        target_directory_created = False
+        if not exists(target_directory):
+            os.makedirs(target_directory, exist_ok=True)
+            target_directory_created = True
+        all_items = list(os.listdir(base_directory))
+        for base_item_name in tqdm(all_items, total=len(all_items), desc=f"Items: {base_directory} --> {target_directory}", disable=not verbose):
+            if endswith and not base_item_name.endswith(endswith):
+                continue
+            if not_endswith and base_item_name.endswith(not_endswith):
+                continue
+            target_item_path = join(target_directory, base_item_name)
+            base_item_path = join(base_directory, base_item_name)
+
+            if min_size: # skip if size is less than specified!
+                base_size = os.path.getsize(base_item_path) / 1024 / 1024 # MB
+                if base_size < min_size:
+                    continue
+
+            if not exists(target_item_path):
+                mv_or_copy(base_item_path, target_item_path, mode="cp" if copy else "mv")
+            else:
+                # check the sizes
+                base_size = os.path.getsize(base_item_path)
+                target_size = os.path.getsize(target_item_path)
+                if target_size == base_size and remove_if_sizes_are_the_same:
+                    os.remove(base_item_path)
+                elif target_size >= base_size and keep_the_largest_if_sizes_are_not_the_same:
+                    os.remove(base_item_path)
+                elif target_size < base_size and keep_the_largest_if_sizes_are_not_the_same:
+                    mv_or_copy(base_item_path, target_item_path, mode="cp" if copy else "mv")
+                else:
+                    if verbose:
+                        print(f"[WARNING] {base_item_path} with size: {base_size} is different from {target_item_path} with size: {target_size}")
+        output = True
+        if DirUtils.is_empty(base_directory) and remove_base_empty_dir:
+            os.rmdir(base_directory)
+        elif not remove_base_empty_dir:
+            pass
+        else:
+            if verbose:
+                print(f"There are some items/directories left in {base_directory}, preventing the base removal")
+            output = False
+        if target_directory_created and len(os.listdir(target_directory)) == 0:
+            os.rmdir(target_directory)
+        return output
+
+    @staticmethod
+    def move_dir_of_dirs(base_dir: str, target_dir: str, remove_empty_base_dirs:bool=True, verbose: bool = True, endswith: str | tuple[str] = None, move_n_samples: int = None, n_jobs: int = 1):
+        """
+
+        :param base_dir:
+        :param target_dir:
+        :param remove_empty_base_dirs:
+        :param verbose:
+        :param endswith:
+        :param move_n_samples: This is only applied to the main directory not the inner ones.
+        :return:
+        """
+        from tqdm import tqdm
+
+        def shutil_move(base_directory_, target_directory_, endswith_):
+            if endswith_:
+                if base_directory_.endswith(endswith_):
+                    shutil.move(base_directory_, target_directory_)
+            else:
+                shutil.move(base_directory_, target_directory_)
+
+        def _move(base_directory_, target_dir_, endswith_):
+            if not DirUtils.is_empty(base_directory_):
+                target_directory_ = join(target_dir_, split(base_directory_)[-1])
+                if exists(target_directory_):
+                    if DirUtils.is_empty(target_directory_):
+                        os.rmdir(target_directory_)
+                        shutil_move(base_directory_, target_directory_, endswith_)
+                    else:
+                        DirUtils.move_dir_of_dirs(base_directory_,
+                                                  target_directory_,
+                                                  remove_empty_base_dirs=remove_empty_base_dirs,
+                                                  endswith=endswith,
+                                                  verbose=verbose)
+                else:
+                    os.makedirs(split(target_directory_)[0], exist_ok=True)
+                    shutil_move(base_directory_, target_directory_, endswith_)
+            else:
+                if remove_empty_base_dirs:
+                    os.rmdir(base_directory_)
+
+        all_base_dirs = DirUtils.list_dir_full_path(base_dir, only_directories=True)[:move_n_samples]
+        if len(all_base_dirs):
+            if n_jobs > 1:
+                from joblib import Parallel, delayed
+                list(tqdm(Parallel(return_as="generator", n_jobs=n_jobs)(delayed(_move)(base_directory, target_dir, endswith) for base_directory in all_base_dirs), total=len(all_base_dirs), desc=f"Dirs: {base_dir} --> {target_dir}"))
+            else:
+                for base_directory in tqdm(all_base_dirs, total=len(all_base_dirs), desc=f"Dirs: {base_dir} --> {target_dir}"):
+                    _move(base_directory, target_dir, endswith)
+
+            if DirUtils.is_empty(base_dir)and remove_empty_base_dirs:
+                os.rmdir(base_dir)
+            else:
+                if verbose:
+                    print(f"[INFO] There are some files(not directories) in {base_dir} preventing it from being removed!")
+        else:
+            if endswith and not base_dir.endswith(endswith):
+                return
+            fixed = DirUtils.safe_item_move(base_dir, target_dir, remove_base_empty_dir=remove_empty_base_dirs, verbose=verbose)
+            if verbose and not fixed:
+                print(f"Directory: {base_dir} and {target_dir} contain same data")
+mkdir_incremental = DirUtils.mkdir_incremental
+
+if __name__ == '__main__':
+    DirUtils.move_dir_of_dirs("/media/aicvi/Med-FM/CT/chest_12t/manifest-NLST_allCT/NLST", "/media/aicvi/Elements/chest_12t/manifest-NLST_allCT/NLST", n_jobs=30)

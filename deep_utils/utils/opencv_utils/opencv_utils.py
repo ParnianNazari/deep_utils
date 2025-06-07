@@ -30,12 +30,15 @@ class VideoWriterCV:
             frame = resize(frame, (self.width, self.height))
         self.vw.write(frame)
 
+    def release(self):
+        self.vw.release()
+
 
 class CVUtils:
     @staticmethod
     def rotate(
-            img,
-            rotation_degree,
+            img: np.ndarray,
+            rotation_degree: int,
             center_point=None,
             scale=1.0,
             dsize=None,
@@ -81,6 +84,21 @@ class CVUtils:
             except Exception as e:
                 cv2.destroyWindow(win_name)
                 raise e
+
+    @staticmethod
+    def write_video(video_path: str, frames: np.ndarray | list[str], fps: int | float, input_format: str = "rgb",
+                    output_colorful: bool = True):
+        shape = frames[0].shape
+        len_shape = len(shape)
+        if input_format == 'rgb':
+            height, width = shape[:2]
+        else:
+            width, height = shape[:2]
+
+        vw = VideoWriterCV(video_path, height, width, 'mp4v', fps=fps, colorful=output_colorful)
+        for frame in frames:
+            vw.write(frame[..., ::-1] if (input_format == 'rgb' and len_shape == 3) else frame)
+        vw.release()
 
 
 show_destroy_cv2 = CVUtils.show_destroy_cv2
